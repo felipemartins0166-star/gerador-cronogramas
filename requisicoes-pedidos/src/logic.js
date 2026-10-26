@@ -1,6 +1,6 @@
 /*LOGIC-START*/
 const S = { reqs: {}, hist: [], imps: [], cfg: { feriados: [], tz: 'America/Sao_Paulo', defaultUnit: 'UN', minDigitsPedido: 4 },
-  today: '', H: new Set(), C: [], F: {}, page: 'resumo', adm: 'import', db: null, canWrite: false, canEdit: false, uid: null, uname: '', ready: false, units: ['UN'], edit: null };
+  today: '', H: new Set(), C: [], F: {}, page: 'resumo', adm: 'import', db: null, canWrite: false, canEdit: false, auth: 'load', role: 'leitor', isOwner: false, isAdm: false, platWrite: true, perfil: null, perfis: [], perms: {}, uid: null, uname: '', ready: false, units: ['UN'], edit: null };
 
 const BK = {
   rec: { l: 'Recebido', c: '--ok' }, pend: { l: 'Pendente', c: '--warn' }, atr: { l: 'Atrasado', c: '--bad' },

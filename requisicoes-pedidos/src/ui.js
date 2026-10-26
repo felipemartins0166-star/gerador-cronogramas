@@ -362,6 +362,8 @@ document.addEventListener('submit', e => {
   e.preventDefault(); const f = e.target; const k = f.dataset.form;
   if (FORMS[k]) FORMS[k](f);
   else if (k === 'nova') saveReq(f);
+  else if (k === 'cad') doCadastro(f);
+  else if (k === 'log') doLogin(f);
   else if (k === 'hol') addHoliday(f);
   else if (k === 'par') saveParams(f);
 });
@@ -434,8 +436,8 @@ async function saveReq(f) {
 
 /* ---------- Administração ---------- */
 function pageAdmin() {
-  const tabs = [['import', 'Importar Excel'], ['inc', 'Inconsistências'], ['hist', 'Histórico'], ['cal', 'Calendário'], ['par', 'Parâmetros'], ['acesso', 'Acesso']];
-  return head('Administração') + `<div class="tabs">${tabs.map(([k, l]) => `<button data-act="tab" data-k="${k}" class="${S.adm === k ? 'on' : ''}">${l}${k === 'inc' ? ` (${S.C.reduce((a, c) => a + c.flags.filter(f => f.s !== 'info').length, 0)})` : ''}</button>`).join('')}</div>` + ({ import: admImport, inc: admInc, hist: admHist, cal: admCal, par: admPar, acesso: admAcesso }[S.adm])();
+  const tabs = [['import', 'Importar Excel'], ['inc', 'Inconsistências'], ['hist', 'Histórico'], ['cal', 'Calendário'], ['par', 'Parâmetros'], ...(S.isAdm ? [['usuarios', 'Usuários']] : []), ['acesso', 'Acesso']];
+  return head('Administração') + `<div class="tabs">${tabs.map(([k, l]) => `<button data-act="tab" data-k="${k}" class="${S.adm === k ? 'on' : ''}">${l}${k === 'inc' ? ` (${S.C.reduce((a, c) => a + c.flags.filter(f => f.s !== 'info').length, 0)})` : ''}</button>`).join('')}</div>` + ({ import: admImport, inc: admInc, hist: admHist, cal: admCal, par: admPar, usuarios: admUsers, acesso: admAcesso }[S.adm])();
 }
 function admImport() {
   const l = S.imps[0];
@@ -448,10 +450,32 @@ function admImport() {
   ${l ? `<div style="height:14px"></div><div class="panel"><h3>Última importação</h3><p style="margin:0">${new Date(l.ts).toLocaleString('pt-BR', { timeZone: S.cfg.tz })} · ${esc(l.arquivo)} · ${l.atualizadas} atualizadas, ${l.iguais} sem alteração, ${l.erros} erros.</p></div>` : ''}`;
 }
 function admAcesso() {
-  const nivel = S.canEdit ? 'Editor: registra recebimentos, aprovações, pedidos e novas requisições, e também importa o Excel, edita o calendário, os parâmetros e o logo.' : S.canWrite ? 'Colaborador: registra recebimentos, cancelamentos, aprovações, pedidos, observações e novas requisições. Não importa Excel nem altera calendário, parâmetros e logo.' : 'Somente leitura: pode consultar tudo, mas não salvar alterações.';
-  return `<div class="panel"><h3>Seu acesso</h3><p style="margin:0"><b>${esc(S.uname || 'Você')}</b> · ${esc(nivel)}</p></div><div style="height:14px"></div><div class="panel"><h3>Como dar permissão a outra pessoa</h3>
-  <ol style="margin:0;padding-left:18px;line-height:1.8"><li>O dono da página abre o menu <b>Compartilhar</b> da página (fora do painel, no topo da tela do Claude).</li><li>Adiciona a pessoa pelo e-mail e escolhe o nível: <b>Colaborador</b> (uso do dia a dia) ou <b>Editor</b> (também importação, calendário, parâmetros e logo).</li><li>A pessoa precisa abrir o link já logada. Quem entra só pelo link como visitante fica em somente leitura.</li></ol>
-  <p class="note">As permissões são controladas pela própria plataforma, não por este painel, e valem para todos os dados. O histórico registra o nome de quem fez cada alteração.</p></div>`;
+  const nivel = S.isAdm ? 'Administrador: gerencia usuários e permissões, importa Excel, edita calendário, parâmetros e logo, e registra todas as atualizações.' : S.role === 'editor' ? 'Editor: registra recebimentos, cancelamentos, aprovações, pedidos, observações e novas requisições, e importa o Excel. Não altera calendário, parâmetros, logo nem permissões.' : 'Leitor: consulta tudo, mas não salva alterações. Peça ao administrador a permissão de Editor.';
+  return `<div class="panel"><h3>Seu acesso</h3><p style="margin:0"><b>${esc(S.uname || 'Você')}</b> · ${esc(nivel)}</p></div><div style="height:14px"></div><div class="panel"><h3>Como funcionam as contas</h3>
+  <ul style="margin:0;padding-left:18px;line-height:1.8"><li>Cada pessoa cria a conta na primeira entrada, com <b>nome</b> (usuário) e <b>matrícula</b> (senha). A matrícula é guardada só como código de verificação, nunca em texto.</li><li>Todo cadastro entra como <b>Leitor</b>. O administrador libera <b>Editor</b> em Administração › Usuários.</li><li>O administrador é o dono da página (ou quem ele colocar como Editor em Compartilhar).</li><li>Para a pessoa conseguir criar a conta, o acesso dela à página, em Compartilhar, precisa ser no mínimo <b>Colaborador</b>.</li></ul>
+  <p class="note">As regras de Leitor e Editor são aplicadas pela tela. Permissões, usuários e configurações são protegidos pela plataforma.</p></div>`;
+}
+function admUsers() {
+  return `<div class="panel"><h3>Usuários que já entraram (${S.perfis.length})</h3><div id="t-main"></div><p class="note">Todo cadastro entra como Leitor. Use "Dar permissão de Editor" para liberar a edição. O nível Administrador é do dono da página e dos Editores definidos em Compartilhar.</p></div>`;
+}
+const nivelDe = p => (p.uid === S.uid && S.isAdm) ? 'Administrador' : (S.perms[p.uid] && S.perms[p.uid].role === 'editor' ? 'Editor' : 'Leitor');
+function postUsers() {
+  const dtm = t => t ? new Date(t).toLocaleString('pt-BR', { timeZone: S.cfg.tz }) : '—';
+  mkTable($('#t-main'), 'users', [
+    { l: 'Nome', t: p => p.nome }, { l: 'Cadastro', t: p => dtm(p.criado), s: p => p.criado || 0 }, { l: 'Último acesso', t: p => dtm(p.ultimoLogin), s: p => p.ultimoLogin || 0 }, { l: 'Acessos', n: 1, t: p => p.logins || 0 },
+    { l: 'Nível', t: p => nivelDe(p), h: p => `<span class="bd ${nivelDe(p) === 'Leitor' ? 'info' : ''}" style="${nivelDe(p) === 'Leitor' ? '' : '--c:var(--ok)'}">${nivelDe(p)}</span>` },
+    { l: 'Ação', t: p => '', h: p => nivelDe(p) === 'Administrador' ? '—' : nivelDe(p) === 'Editor' ? `<button class="btn sec sm" data-act="role" data-uid="${esc(p.uid)}" data-to="leitor">Remover permissão de Editor</button>` : `<button class="btn sm" data-act="role" data-uid="${esc(p.uid)}" data-to="editor">Dar permissão de Editor</button>` }
+  ], S.perfis.slice().sort((a, b) => (b.ultimoLogin || 0) - (a.ultimoLogin || 0)), { onRow: () => { }, empty: 'Ninguém criou conta ainda.' });
+}
+async function setRole(uid, to) {
+  const p = S.perfis.find(x => x.uid === uid); if (!p) return; const de = nivelDe(p);
+  try {
+    await enqueue(async () => {
+      if (to === 'editor') await withRetry(() => S.db.doc('permissoes/' + uid).set({ role: 'editor', nome: p.nome, por: S.uname, em: Date.now() })); else await withRetry(() => S.db.doc('permissoes/' + uid).delete());
+      await logH({ req: '', reqId: '', tipo: 'Permissão', campo: p.nome, de, para: to === 'editor' ? 'Editor' : 'Leitor' });
+    });
+    toast(to === 'editor' ? p.nome + ' agora é Editor.' : 'Permissão de Editor removida.');
+  } catch (e) { toast(errMsg(e), true); }
 }
 function admInc() {
   return `<div class="panel"><h3>Inconsistências e validações</h3><div id="t-main"></div><p class="note">Os alertas vêm da leitura do PDF e das regras de datas, quantidades e vínculos. Nada foi corrigido automaticamente: confirme na origem e atualize a planilha.</p></div>`;
@@ -666,6 +690,8 @@ const ACT = {
   apply: applyImport,
   copyhead() { copyText(HEADERS.join('\t')); },
   nat() { const H = new Set([...(S.cfg.feriados || []), ...NATIONAL]); saveCfg({ feriados: [...H].sort() }); },
+  role(el) { setRole(el.dataset.uid, el.dataset.to); },
+  logout() { try { sessionStorage.removeItem('rq_ok_' + S.uid); } catch (e) { } S.auth = S.perfil ? 'login' : 'novo'; S.authErr = ''; closeModal(); render(); },
   rmlogo() { saveCfg({ logo: '' }); },
   gologo() { S.page = 'admin'; S.adm = 'par'; render(); },
   rmhol(el) { saveCfg({ feriados: (S.cfg.feriados || []).filter(d => d !== el.dataset.k) }); }
@@ -673,7 +699,7 @@ const ACT = {
 document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el && ACT[el.dataset.act]) { e.preventDefault(); ACT[el.dataset.act](el); } });
 
 /* ---------- render ---------- */
-const PAGES = { resumo: [pageResumo, postResumo], requisicoes: [pageReqs, postReqs], pedidos: [pagePeds, postPeds], materiais: [pageMat, postMat], aprovacoes: [pageApr, postApr], atrasos: [pageAtr, postAtr], nova: [pageNova, null], admin: [pageAdmin, () => { if (S.adm === 'inc') postInc(); if (S.adm === 'hist') postHist(); }] };
+const PAGES = { resumo: [pageResumo, postResumo], requisicoes: [pageReqs, postReqs], pedidos: [pagePeds, postPeds], materiais: [pageMat, postMat], aprovacoes: [pageApr, postApr], atrasos: [pageAtr, postAtr], nova: [pageNova, null], admin: [pageAdmin, () => { if (S.adm === 'inc') postInc(); if (S.adm === 'hist') postHist(); if (S.adm === 'usuarios') postUsers(); }] };
 function navHTML() {
   const { rows } = applyFilters ? { rows: S.C.flatMap(c => c.items) } : { rows: [] };
   const nAtr = rows.filter(i => i.st === 'atr').length, nApr = S.C.filter(c => c.pendGeral).length;
@@ -690,6 +716,8 @@ function render() {
   const lg = $('#logo'); if (lg) lg.innerHTML = logoHTML();
   $('#nav').innerHTML = S.loaded ? navHTML() : NAV.map(([k, l]) => `<a data-act="nav" data-k="${k}" class="${S.page === k ? 'on' : ''}"><i></i>${l}</a>`).join('');
   if (S.noDb) { main.innerHTML = head('Painel de Requisições') + `<div class="panel empty-st"><h2>Banco de dados indisponível</h2><p>Entre na sua conta Claude para abrir esta página com acesso aos dados salvos.</p></div>`; return; }
+  if (S.auth !== 'ok') { $('#nav').innerHTML = ''; const w = $('#who'); if (w) w.innerHTML = ''; main.innerHTML = authHTML(); return; }
+  whoRender();
   if (!S.loaded) { main.innerHTML = head('Resumo') + `<div class="panel empty-st"><h2>Carregando a base…</h2></div>`; return; }
   if (!S.C.length && S.page !== 'admin' && S.page !== 'nova') {
     main.innerHTML = head(NAV.find(n => n[0] === S.page)[1]) + `<div class="panel empty-st"><h2>Nenhum dado na base ainda</h2><p>Importe a planilha em Administração para começar, ou cadastre a primeira requisição em Nova Requisição.</p><p><button class="btn" data-act="nav" data-k="admin">Ir para Administração</button></p></div>`; return;
@@ -700,20 +728,86 @@ function render() {
 }
 let tmr = null;
 function changed() { clearTimeout(tmr); tmr = setTimeout(() => { recalc(); if (S.page === 'nova' && S.rendered && S.loaded) { $('#nav').innerHTML = navHTML(); return; } render(); }, 60); }
+/* ---------- contas ---------- */
+const sessOk = () => { try { return sessionStorage.getItem('rq_ok_' + S.uid) === '1'; } catch (e) { return false; } };
+const sessSet = () => { try { sessionStorage.setItem('rq_ok_' + S.uid, '1'); } catch (e) { } };
+function recomputeAccess() { S.canEdit = !!S.isAdm; S.canWrite = !!(S.isAdm || S.role === 'editor'); }
+function authHTML() {
+  const wrap = (t, b) => `<div class="authbox"><div class="panel"><h2 style="margin:0 0 4px;font:700 24px var(--f-d)">${t}</h2>${b}</div></div>`;
+  if (S.noDb) return wrap('Banco de dados indisponível', '<p>Entre na sua conta Claude para abrir esta página.</p>');
+  if (S.auth === 'load') return wrap('Carregando…', '<p class="mut">Verificando seu acesso.</p>');
+  const err = `<div class="err" id="aerr">${esc(S.authErr || '')}</div>`;
+  if (!S.platWrite) return wrap('Acesso somente leitura', '<p>Para criar sua conta, o dono da página precisa liberar seu acesso como <b>Colaborador</b> em Compartilhar. Depois, abra a página de novo.</p>');
+  if (S.auth === 'novo') return wrap('Criar conta', `<p class="mut" style="margin-top:0">Use seu nome completo como usuário e sua matrícula como senha.</p><form class="f one" data-form="cad" autocomplete="off"><label>Nome (usuário)<input name="nome" required autocomplete="off"></label><label>Matrícula (senha)<input name="mat" type="password" inputmode="numeric" required autocomplete="new-password"></label><label>Confirme a matrícula<input name="mat2" type="password" inputmode="numeric" required autocomplete="new-password"></label>${err}<div><button class="btn">Criar conta e entrar</button></div></form><p class="note">Todo cadastro entra como Leitor. O administrador libera a edição.</p>`);
+  return wrap('Entrar', `<p class="mut" style="margin-top:0">Informe seu nome e sua matrícula.</p><form class="f one" data-form="log"><label>Nome (usuário)<input name="nome" value="${esc(S.perfil ? S.perfil.nome : '')}" required autocomplete="off"></label><label>Matrícula (senha)<input name="mat" type="password" inputmode="numeric" required autocomplete="current-password"></label>${err}<div><button class="btn">Entrar</button></div></form>`);
+}
+function authErr(m) { S.authErr = m; const e = $('#aerr'); if (e) e.textContent = m; }
+function whoRender() {
+  const w = $('#who'); if (!w) return;
+  w.innerHTML = `<div class="nm">${esc(S.uname)}</div><div class="rl">${S.isAdm ? 'Administrador' : S.role === 'editor' ? 'Editor' : 'Leitor'}</div><button class="btn sm lo" data-act="logout">Sair</button>`;
+}
+async function enterOk() { S.auth = 'ok'; sessSet(); startData(); render(); }
+async function doCadastro(f) {
+  const nome = f.nome.value.trim().replace(/\s+/g, ' '), mat = f.mat.value.trim(), mat2 = f.mat2.value.trim();
+  if (nome.length < 3 || !slugN(nome)) return authErr('Informe o nome completo.');
+  if (!/^[0-9A-Za-z]{3,20}$/.test(mat)) return authErr('A matrícula deve ter de 3 a 20 letras ou números.');
+  if (mat !== mat2) return authErr('As duas matrículas não são iguais.');
+  const salt = Array.from(crypto.getRandomValues(new Uint8Array(12))).map(x => x.toString(16).padStart(2, '0')).join(''), slug = slugN(nome);
+  const perfil = { uid: S.uid, nome, slug, salt, hash: pwHash(salt, slug, mat), criado: Date.now(), ultimoLogin: Date.now(), logins: 1 };
+  try { await withRetry(() => S.db.doc('perfis/' + S.uid).set(perfil)); } catch (e) { return authErr(errMsg(e)); }
+  S.perfil = perfil; S.uname = nome; await enterOk();
+}
+let tries = 0;
+async function doLogin(f) {
+  if (tries >= 5) return authErr('Muitas tentativas. Recarregue a página para tentar de novo.');
+  const p = S.perfil, nome = f.nome.value.trim().replace(/\s+/g, ' '), mat = f.mat.value.trim();
+  if (!p || slugN(nome) !== p.slug || pwHash(p.salt, p.slug, mat) !== p.hash) { tries++; return authErr('Usuário ou senha incorretos.'); }
+  S.uname = p.nome; p.ultimoLogin = Date.now(); p.logins = (p.logins || 0) + 1;
+  try { await withRetry(() => S.db.doc('perfis/' + S.uid).set(p)); } catch (e) { }
+  await enterOk();
+}
+let started = false;
+function startData() {
+  if (started) return; started = true; const db = S.db;
+  const err = e => { S.loaded = true; toast('Falha ao ler a base: ' + ((e && e.message) || ''), true); render(); };
+  db.collection('requisicoes').onSnapshot(s => { const m = {}; s.docs.forEach(d => { m[d.id] = d.data(); }); S.reqs = m; S.loaded = true; changed(); }, err);
+  db.doc('config/main').onSnapshot(s => { if (s.exists) S.cfg = { ...S.cfg, ...s.data() }; changed(); }, () => { });
+  db.collection('historico').orderBy('ts', 'desc').limit(500).onSnapshot(s => { S.hist = s.docs.map(d => d.data()); changed(); }, () => { });
+  db.collection('importacoes').orderBy('ts', 'desc').limit(60).onSnapshot(s => { S.imps = s.docs.map(d => d.data()); changed(); }, () => { });
+  if (S.isAdm) {
+    db.collection('perfis').onSnapshot(s => { S.perfis = s.docs.map(d => d.data()); changed(); }, () => { });
+    db.collection('permissoes').onSnapshot(s => { const m = {}; s.docs.forEach(d => { m[d.id] = d.data(); }); S.perms = m; changed(); }, () => { });
+  }
+}
 async function boot() {
   const hash = (location.hash || '').slice(1); if (PAGES[hash]) S.page = hash;
   render();
   setInterval(() => { if (S.loaded && todayISO() !== S.today) { recalc(); render(); } }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.loaded && todayISO() !== S.today) { recalc(); render(); } });
   if (!window.claude || !window.claude.use) { S.noDb = true; render(); return; }
-  const db = await window.claude.use('db'); if (!db) { S.noDb = true; render(); return; }
+  const db = await window.claude.use('db'); const u = await window.claude.use('user');
+  if (!db || !u) { S.noDb = true; render(); return; }
   S.db = db;
-  try { const u = await window.claude.use('user'); if (u) { S.canWrite = (await u.can('data.write')) !== false; try { S.canEdit = !!(await u.canEdit()); } catch (e) { S.canEdit = S.canWrite; } try { S.uid = await u.id(); } catch (e) { } try { const me = await u.me(); S.uname = (me && me.name) || ''; if (!S.uname && S.uid) { const pr = await u.profiles([S.uid]); S.uname = (pr && pr[S.uid] && pr[S.uid].name) || ''; } } catch (e) { } } else { S.canWrite = true; S.canEdit = true; } } catch (e) { S.canWrite = true; S.canEdit = true; }
-  const err = e => { S.loaded = true; toast('Falha ao ler a base: ' + ((e && e.message) || ''), true); render(); };
-  db.collection('requisicoes').onSnapshot(s => { const m = {}; s.docs.forEach(d => { m[d.id] = d.data(); }); S.reqs = m; S.loaded = true; changed(); }, err);
-  db.doc('config/main').onSnapshot(s => { if (s.exists) S.cfg = { ...S.cfg, ...s.data() }; changed(); }, () => { });
-  db.collection('historico').orderBy('ts', 'desc').limit(500).onSnapshot(s => { S.hist = s.docs.map(d => d.data()); changed(); }, () => { });
-  db.collection('importacoes').orderBy('ts', 'desc').limit(60).onSnapshot(s => { S.imps = s.docs.map(d => d.data()); changed(); }, () => { });
+  try { S.uid = await u.id(); } catch (e) { }
+  try { S.isOwner = !!(await u.isOwner()); } catch (e) { }
+  try { S.isAdm = !!(await u.canEdit()) || S.isOwner; } catch (e) { S.isAdm = S.isOwner; }
+  try { S.platWrite = (await u.can('data.write')) !== false; } catch (e) { }
+  if (!S.uid) { S.noDb = true; render(); return; }
+  recomputeAccess();
+  db.doc('permissoes/' + S.uid).onSnapshot(s => { S.role = s.exists && s.data().role === 'editor' ? 'editor' : 'leitor'; recomputeAccess(); if (S.auth === 'ok') changed(); }, () => { });
+  try {
+    const ps = await db.doc('perfis/' + S.uid).get();
+    if (ps.exists) { S.perfil = ps.data(); S.uname = S.perfil.nome; if (sessOk()) { S.auth = 'ok'; startData(); } else S.auth = 'login'; }
+    else {
+      let claimed = false;
+      if (S.isOwner) { // pré-cadastro do administrador
+        try { const pc = await db.collection('preCadastros').get(); const d = pc.docs.map(x => x.data()).find(x => x && x.role === 'admin' && x.hash);
+          if (d) { const perfil = { uid: S.uid, nome: d.nome, slug: d.slug, salt: d.salt, hash: d.hash, criado: Date.now(), ultimoLogin: Date.now(), logins: 1, preCadastro: true }; await db.doc('perfis/' + S.uid).set(perfil); S.perfil = perfil; S.uname = d.nome; claimed = true; } } catch (e) { }
+      }
+      if (claimed) { S.auth = 'ok'; sessSet(); startData(); } else S.auth = 'novo';
+    }
+  } catch (e) { S.auth = S.platWrite ? 'novo' : 'novo'; }
+  render();
 }
 boot();
 /*UI-END*/
